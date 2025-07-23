@@ -24,7 +24,12 @@
   
   <!-- Custom CSS to fix dropdown issues -->
   <style>
-    /* Ensure dropdowns stay open */
+    /* Force all dropdowns to stay open and visible */
+    details {
+      display: block !important;
+      position: relative !important;
+    }
+    
     details[open] {
       display: block !important;
     }
@@ -33,21 +38,21 @@
       display: block !important;
       visibility: visible !important;
       opacity: 1 !important;
-    }
-    
-    /* Prevent auto-closing of dropdowns */
-    details {
-      position: relative;
+      height: auto !important;
+      overflow: visible !important;
     }
     
     details > summary {
-      cursor: pointer;
+      cursor: pointer !important;
+      display: block !important;
     }
     
     details > div {
-      display: block;
-      visibility: visible;
-      opacity: 1;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      height: auto !important;
+      overflow: visible !important;
     }
     
     /* Override any conflicting styles */
@@ -55,9 +60,15 @@
       display: block !important;
       visibility: visible !important;
       opacity: 1 !important;
+      height: auto !important;
+      overflow: visible !important;
     }
     
-    /* Ensure Term 2 Learner Report dropdown stays visible */
+    /* Force Term 2 Learner Report dropdown to stay visible */
+    details:first-of-type {
+      display: block !important;
+    }
+    
     details:first-of-type[open] {
       display: block !important;
     }
@@ -66,31 +77,81 @@
       display: block !important;
       visibility: visible !important;
       opacity: 1 !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+    
+    /* Override any hidden or collapsed states */
+    details[hidden], details[style*="display: none"], details[style*="visibility: hidden"] {
+      display: block !important;
+      visibility: visible !important;
+    }
+    
+    details > div[hidden], details > div[style*="display: none"], details > div[style*="visibility: hidden"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+    
+    /* Prevent any animations or transitions that might hide content */
+    details, details > div, details > summary {
+      transition: none !important;
+      animation: none !important;
     }
   </style>
   
   <!-- JavaScript to prevent dropdown auto-closing -->
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      // Prevent auto-closing of dropdowns
+    // Function to force keep the Term 2 Learner Report dropdown open
+    function forceKeepDropdownOpen() {
       const details = document.querySelectorAll('details');
-      
       details.forEach(function(detail) {
-        // Ensure the first dropdown (Term 2 Learner Report) stays open
-        if (detail.querySelector('summary').textContent.includes('Term 2 Learner Report')) {
+        if (detail.querySelector('summary') && detail.querySelector('summary').textContent.includes('Term 2 Learner Report')) {
+          // Force it to stay open
           detail.setAttribute('open', 'open');
+          
+          // Remove any event listeners that might close it
+          const newDetail = detail.cloneNode(true);
+          detail.parentNode.replaceChild(newDetail, detail);
+          newDetail.setAttribute('open', 'open');
         }
-        
-        // Prevent any script from closing the dropdown
-        detail.addEventListener('toggle', function(e) {
-          if (this.querySelector('summary').textContent.includes('Term 2 Learner Report')) {
-            // Keep it open
-            setTimeout(() => {
-              this.setAttribute('open', 'open');
-            }, 100);
+      });
+    }
+    
+    // Run immediately
+    forceKeepDropdownOpen();
+    
+    // Run when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      forceKeepDropdownOpen();
+      
+      // Set up continuous monitoring
+      setInterval(forceKeepDropdownOpen, 500);
+      
+      // Override any mutation observers
+      const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+          if (mutation.type === 'attributes' && mutation.attributeName === 'open') {
+            forceKeepDropdownOpen();
           }
         });
       });
+      
+      // Observe all details elements
+      document.querySelectorAll('details').forEach(function(detail) {
+        observer.observe(detail, { attributes: true, attributeFilter: ['open'] });
+      });
+    });
+    
+    // Run when window loads
+    window.addEventListener('load', function() {
+      forceKeepDropdownOpen();
+      setInterval(forceKeepDropdownOpen, 1000);
+    });
+    
+    // Override any global functions that might close dropdowns
+    window.addEventListener('beforeunload', function() {
+      forceKeepDropdownOpen();
     });
   </script>
 
