@@ -1,0 +1,276 @@
+document.addEventListener("DOMContentLoaded", function () {
+  if (isQuizPage()) {
+    const quizLink = document.getElementById("take_quiz_link");
+    const quizDetails = getQuizEnvironmentInfo();
+    clearOtherQuizStorage(quizDetails.localStorageKey);
+
+    if (quizLink) {
+      fetchExamData(quizDetails.requestUrl)
+        .then(({ examId, startCode }) => {
+          updateQuizLinkState(quizLink, (examStarted = false));
+          showLaunchBanner(startCode);
+          pollUserExamResults(
+            examId,
+            startCode,
+            quizDetails.localStorageKey,
+            quizDetails.userEmail,
+            quizLink
+          );
+        })
+        .catch((error) => {
+          console.error("❌ Error loading exam data:", error);
+        });
+    }
+  }
+
+  if (isQuizTakePage()) {
+    console.log("📝 Quiz page detected!");
+
+    const quizDetails = getQuizEnvironmentInfo();
+    clearOtherQuizStorage(quizDetails.localStorageKey);
+    const storedStartCode = localStorage.getItem(quizDetails.localStorageKey);
+
+    $("#submit_quiz_button").on("click", function () {
+      handleQuizSubmit(storedStartCode, quizDetails.localStorageKey);
+    });
+
+    if (storedStartCode) {
+      console.log("✅ Invigilator app was previously detected for this quiz.");
+      showLaunchBanner(storedStartCode, (existingExam = true));
+      showBannerMessage(
+        "Invigilator was detected running for this quiz. Ensure it is still running or click below to reopen"
+      );
+
+      return;
+    }
+
+    localStorage.setItem(buttonRedirectStorageKey, "false");
+    fetchExamData(quizDetails.requestUrl)
+      .then(({ examId, startCode }) => {
+        showLaunchBanner(startCode);
+        window.open(
+          `https://web.invigilator.app/?exam_code=${startCode}&action=start`,
+          "_blank"
+        );
+        pollUserExamResults(
+          examId,
+          startCode,
+          quizDetails.localStorageKey,
+          quizDetails.userEmail
+        );
+      })
+      .catch((error) => {
+        console.error("❌ Error loading exam data:", error);
+      });
+  }
+});
+
+function updateQuizLinkState(quizLink, examStarted) {
+  if (!examStarted) {
+    quizLink.addEventListener("click", preventClick);
+    quizLink.removeAttribute("href");
+    quizLink.removeAttribute("data-method");
+    quizLink.style.opacity = "0.5";
+    quizLink.style.cursor = "not-allowed";
+  } else {
+    const course_id = ENV.COURSE_ID;
+    const quiz_id = ENV.QUIZ["id"];
+    const user_id = ENV.current_user_id;
+    quizLink.removeEventListener("click", preventClick);
+    quizLink.setAttribute(
+      "href",
+      `/courses/${course_id}/quizzes/${quiz_id}/take?user_id=${user_id}`
+    );
+    quizLink.setAttribute("data-method", "post");
+    quizLink.style.opacity = "";
+    quizLink.style.cursor = "";
+  }
+}
+
+// Helpers
+function preventClick(e) {
+  e.preventDefault();
+}
+
+function isQuizTakePage() {
+  const url = window.location.href;
+  return url.includes("/quizzes/") && url.includes("/take");
+}
+
+function isQuizPage() {
+  const url = window.location.href;
+  return url.includes("/quizzes/") && url.includes("/courses");
+}
+
+function getQuizEnvironmentInfo() {
+  const quizUrl = ENV.QUIZZES_URL;
+  const courseId = ENV.COURSE_ID;
+  const quizId = ENV.QUIZ.id;
+  const assignmentId = ENV.ASSESSMENT_ID;
+  const subdomain = new URL(quizUrl).hostname.split(".")[0];
+  let ltiCode;
+  console.log("assignment:", assignmentId);
+  if (assignmentId) {
+    console.log("in assignment");
+    ltiCode = `${subdomain}-${courseId}-${assignmentId}-assignment`;
+  } else {
+    ltiCode = `${subdomain}-${courseId}-${quizId}`;
+  }
+  const requestUrl = `https://invigilatorapp.herokuapp.com/api_external/v1/lti_exams/${ltiCode}`;
+  const localStorageKey = `invigilator-quiz-${quizId}`;
+  const userEmail = ENV.current_user.email;
+
+  console.log(
+    `📌 Course ID: ${courseId}, Quiz ID: ${quizId}, User ID: ${ENV.current_user_id}`
+  );
+
+  return {
+    courseId,
+    quizId,
+    requestUrl,
+    localStorageKey,
+    userEmail,
+  };
+}
+
+function clearOtherQuizStorage(currentKey) {
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("invigilator-quiz-") && key !== currentKey) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
+function handleQuizSubmit(startCode, storageKey) {
+  console.log("Submit button clicked");
+  if (startCode) {
+    window.open(
+      `https://web.invigilator.app/?exam_code=${startCode}&action=end`,
+      "_blank"
+    );
+  }
+  localStorage.removeItem("invigilator_start_code");
+  localStorage.removeItem(storageKey);
+}
+
+function fetchExamData(requestUrl) {
+  return new Promise((resolve, reject) => {
+    $.ajax({
+      type: "GET",
+      url: requestUrl,
+      dataType: "json",
+      success: function (data) {
+        console.log("✅ Successfully fetched exam data:", data);
+
+        const { id: examId, start_code: startCode } = data;
+
+        if (!examId || !startCode) {
+          console.error("❌ Missing required exam data");
+          showBannerMessage(
+            "Unable to initialize Invigilator. Please contact support."
+          );
+          reject(new Error("Missing examId or startCode"));
+          return;
+        }
+
+        resolve({ examId, startCode });
+      },
+      error: function (xhr, _, error) {
+        console.error("❌ Failed to fetch exam data:", {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          responseText: xhr.responseText,
+          error,
+          url: requestUrl,
+        });
+
+        showBannerMessage(
+          "Unable to connect to Invigilator service. Please refresh the page and try again."
+        );
+        reject(error);
+      },
+    });
+  });
+}
+
+function showBannerMessage(message) {
+  $("#invigilator-warning-banner p").text(message);
+}
+
+function showLaunchBanner(startCode, existingExam = false) {
+  const banner = $(`
+    <div id="invigilator-warning-banner" style="background-color: #36BA96; color: #1A1552; padding: 15px; margin: 10px 0; border-radius: 4px; text-align: center; font-weight: bold;">
+      <p>The Invigilator app is not detected running for this quiz. Click below to open. You must start Invigilator before starting your quiz.</p>
+      <button id="open-invigilator-btn" style="color:#1A1552;border:none;font-weight:bold;border-radius:0.75rem;min-width:18rem;padding:0.75rem 3.5rem;background-color:#EFD78B;border-bottom:8px solid #CEAD4F;transition:all 0.3s ease-in-out;"
+        onmousedown="this.style.backgroundColor='#EFD78B'; this.style.borderBottomWidth='0px'; this.style.transform='translateY(0.5rem)'"
+        onmouseup="this.style.borderBottomWidth='8px'; this.style.transform='translateY(0)'"
+      >Open Invigilator</button>
+    </div>
+  `);
+
+  $("#content").prepend(banner);
+
+  if (!existingExam) {
+    $("#open-invigilator-btn").on("click", function () {
+      window.open(
+        `https://web.invigilator.app/?exam_code=${startCode}&action=start`,
+        "_blank"
+      );
+    });
+  } else {
+    $("#open-invigilator-btn").on("click", function () {
+      window.open(`https://web.invigilator.app/exam`, "_blank");
+    });
+  }
+}
+
+function pollUserExamResults(
+  examId,
+  startCode,
+  localStorageKey,
+  userEmail,
+  quizLink = null
+) {
+  const poll = () => {
+    const pollUrl = `https://invigilatorapp.herokuapp.com/api_external/v1/lti_starter_user_exam_results?email=${userEmail}&exam_id=${examId}`;
+
+    $.ajax({
+      type: "GET",
+      url: pollUrl,
+      dataType: "json",
+      success: function (data) {
+        console.log("📊 User exam results:", data);
+
+        if (Array.isArray(data) && data.length > 0) {
+          $("#invigilator-warning-banner").slideUp(300, function () {
+            $(this).remove();
+          });
+
+          if (window.invigilatorPollingInterval) {
+            clearInterval(window.invigilatorPollingInterval);
+            window.invigilatorPollingInterval = null;
+          }
+
+          if (startCode) {
+            localStorage.setItem(localStorageKey, startCode);
+            localStorage.setItem("exam-started", "true");
+            console.log("✅ Start code saved to local storage:", startCode);
+          }
+
+          if (quizLink) {
+            updateQuizLinkState(quizLink, (examStarted = true));
+          }
+
+          console.log("✅ Invigilator app detected. Polling stopped.");
+        }
+      },
+      error: function (error) {
+        console.error("❌ Failed to poll user exam results:", error);
+      },
+    });
+  };
+
+  poll(); // run once immediately
+  window.invigilatorPollingInterval = setInterval(poll, 10000);
+}
